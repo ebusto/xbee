@@ -16,15 +16,15 @@ var (
 )
 
 const (
-	FrameOffsetData     = 8
-	FrameOffsetStart    = 0
-	FrameOffsetLength   = 1
-	FrameOffsetType     = 3
 	FrameOffsetAddress  = 4
-	FrameOffsetId       = 4
-	FrameOffsetRSSI     = 6
-	FrameOffsetTxStatus = 5
 	FrameOffsetAtStatus = 8
+	FrameOffsetData     = 8
+	FrameOffsetId       = 4
+	FrameOffsetLength   = 1
+	FrameOffsetRSSI     = 6
+	FrameOffsetStart    = 0
+	FrameOffsetTxStatus = 5
+	FrameOffsetType     = 3
 )
 
 const (
@@ -38,21 +38,30 @@ const (
 	FrameTypeTxStatus    = 0x89
 )
 
+// Bytes that need to be escaped.
+var escape = map[byte]bool{
+	0x11: true, // XON
+	0x13: true, // XOFF
+	0x7D: true, // Escape
+	0x7E: true, // Start
+}
+
 type Frame []byte
 
 type XBee struct {
-	rx map[uint16]chan Frame
 	cf map[byte]chan Frame
 	cn io.ReadWriter
+	rx map[uint16]chan Frame
 	sn chan byte
+
 	sync.Mutex
 }
 
 func New(cn io.ReadWriter) *XBee {
 	x := &XBee{
-		rx: make(map[uint16]chan Frame),
 		cf: make(map[byte]chan Frame),
 		cn: cn,
+		rx: make(map[uint16]chan Frame),
 		sn: Sequence(),
 	}
 
@@ -151,13 +160,17 @@ func (x *XBee) recv() {
 	for {
 		f := make(Frame, 4)
 
-		if err := x.readBytes(br, f); err != nil {
+		if err := x.readBytes(br, f[:1]); err != nil {
 			panic(err)
 		}
 
 		if f.Start() != 0x7E {
 			log.Printf("Invalid start byte % X", f.Start())
 			continue
+		}
+
+		if err := x.readBytes(br, f[1:]); err != nil {
+			panic(err)
 		}
 
 		p := make([]byte, f.Length())
@@ -281,12 +294,32 @@ func (f Frame) Address16() uint16 {
 	return Uint16(f[FrameOffsetAddress:])
 }
 
+func (f Frame) Address64() uint64 {
+	return Uint64(f[FrameOffsetAddress:])
+}
+
+func (f Frame) Checksum() byte {
+	return 0xFF - f.Sum()
+}
+
 func (f Frame) Data() []byte {
+	// Do not include the checksum.
 	return f[FrameOffsetData : len(f)-1]
 }
 
-func (f Frame) Start() byte {
-	return f[FrameOffsetStart]
+func (f Frame) Escape() []byte {
+	b := []byte{0x7E}
+
+	// The first byte is not escaped, only length onwards.
+	for _, c := range f[FrameOffsetLength:] {
+		if escape[c] {
+			b = append(b, 0x7D, c^0x20)
+		} else {
+			b = append(b, c)
+		}
+	}
+
+	return b
 }
 
 func (f Frame) Id() byte {
@@ -297,8 +330,12 @@ func (f Frame) Length() int {
 	return int(Uint16(f[FrameOffsetLength:]))
 }
 
-func (f Frame) RSSI() byte {
-	return f[FrameOffsetRSSI]
+func (f Frame) RSSI() int {
+	return int(f[FrameOffsetRSSI])
+}
+
+func (f Frame) Start() byte {
+	return f[FrameOffsetStart]
 }
 
 func (f Frame) Status() byte {
@@ -313,44 +350,19 @@ func (f Frame) Status() byte {
 	return 0xFF
 }
 
-func (f Frame) Type() byte {
-	return f[FrameOffsetType]
-}
-
-func (f Frame) Checksum() byte {
-	return 0xFF - f.Sum()
-}
-
-func (f Frame) Escape() []byte {
-	var b []byte
-
-	escape := map[byte]bool{
-		0x11: true, // XON
-		0x13: true, // XOFF
-		0x7D: true, // Escape
-		0x7E: true, // Start
-	}
-
-	// The first byte, which is the frame delimiter, should not be escaped.
-	for i, c := range f {
-		if escape[c] && i > 0 {
-			b = append(b, 0x7D, c^0x20)
-		} else {
-			b = append(b, c)
-		}
-	}
-
-	return b
-}
-
 func (f Frame) Sum() byte {
 	var sum byte
 
-	for _, c := range f[3:] {
+	// The start and length bytes are not included.
+	for _, c := range f[FrameOffsetType:] {
 		sum += c
 	}
 
 	return sum
+}
+
+func (f Frame) Type() byte {
+	return f[FrameOffsetType]
 }
 
 func (f Frame) Valid() bool {
