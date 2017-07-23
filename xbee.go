@@ -70,6 +70,7 @@ func New(cn io.ReadWriter) *XBee {
 	return x
 }
 
+// Address gets or sets the radio's 16 bit address.
 func (x *XBee) Address(addr ...uint16) uint16 {
 	b := []byte("MY")
 
@@ -91,6 +92,7 @@ func (x *XBee) Address(addr ...uint16) uint16 {
 	return 0
 }
 
+// Send transmits the payload to the destination address.
 func (x *XBee) Send(addr uint16, p []byte) error {
 	n := 0
 
@@ -160,33 +162,40 @@ func (x *XBee) recv() {
 	for {
 		f := make(Frame, 4)
 
+		// Read the start byte.
 		if err := x.readBytes(br, f[:1]); err != nil {
 			panic(err)
 		}
 
+		// Is it the correct start byte?
 		if f.Start() != 0x7E {
 			log.Printf("Invalid start byte % X", f.Start())
 			continue
 		}
 
+		// Read the length and type.
 		if err := x.readBytes(br, f[1:]); err != nil {
 			panic(err)
 		}
 
+		// Read the payload.
 		p := make([]byte, f.Length())
 
 		if err := x.readBytes(br, p); err != nil {
 			panic(err)
 		}
 
+		// Append the payload to the frame.
 		f = append(f, p...)
 
-		x.Lock()
-
+		// Is the checksum correct?
 		if !f.Valid() {
 			log.Fatal("Invalid frame: % X", f)
 		}
 
+		x.Lock()
+
+		// Dispatch the frame.
 		switch f.Type() {
 		case FrameTypeAtStatus, FrameTypeTxStatus:
 			if c, ok := x.cf[f.Id()]; ok {
@@ -204,6 +213,9 @@ func (x *XBee) recv() {
 
 		case FrameTypeRx64:
 			log.Printf("Rx64: % X", f)
+
+		default:
+			log.Printf("Unknown frame type: % X", f.Type())
 		}
 
 		x.Unlock()
