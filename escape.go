@@ -13,12 +13,13 @@ type EscapedWriter struct {
 }
 
 func (r *EscapedReader) Read(b []byte) (int, error) {
-	p := make([]byte, 1) // Single byte buffer.
-	e := false           // Next byte escaped?
-	n := 0               // Total bytes read.
+	e := false // Next byte escaped?
+	n := 0     // Total bytes read.
 
 	for n < len(b) {
-		if _, err := r.R.Read(p); err != nil {
+		var p [1]byte
+
+		if _, err := r.R.Read(p[:]); err != nil {
 			return n, err
 		}
 
@@ -49,15 +50,15 @@ func (w *EscapedWriter) Write(b []byte) (int, error) {
 		0x7E: true, // Start
 	}
 
-	var e []byte
+	var p []byte
 
 	for _, c := range b {
 		if escape[c] {
-			e = append(e, 0x7D, c^0x20)
+			p = append(p, 0x7D, c^0x20)
 		} else {
-			e = append(e, c)
+			p = append(p, c)
 		}
 	}
 
-	return w.W.Write(e)
+	return w.W.Write(p)
 }

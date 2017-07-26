@@ -1,6 +1,7 @@
 package xbee
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -17,10 +18,18 @@ const (
 	FrameOffsetType     = 3
 )
 
+var (
+	PutUint16 = binary.BigEndian.PutUint16
+	PutUint64 = binary.BigEndian.PutUint64
+	Uint16    = binary.BigEndian.Uint16
+	Uint64    = binary.BigEndian.Uint64
+)
+
 var seq = NewSequence()
 
 type Frame []byte
 
+// NewFrame returns a new frame with the specified payload.
 func NewFrame(bs ...[]byte) Frame {
 	f := Frame{
 		0x7E, // 0: Start
@@ -43,6 +52,7 @@ func NewFrame(bs ...[]byte) Frame {
 	return append(f, f.Checksum())
 }
 
+// TypeAddress16 returns the payload for a 16-bit address assignment.
 func TypeAddress16(addr uint16) []byte {
 	b := TypeAtCommand()
 	b = append(b, []byte("MY")...)
@@ -53,6 +63,7 @@ func TypeAddress16(addr uint16) []byte {
 	return b
 }
 
+// TypeAtCommand returns the payload for an AT command request.
 func TypeAtCommand() []byte {
 	return []byte{
 		0x08, // 3: Type
@@ -60,6 +71,7 @@ func TypeAtCommand() []byte {
 	}
 }
 
+// TypeTx16 returns the payload for transmitting to a 16-bit address.
 func TypeTx16(addr uint16) []byte {
 	b := []byte{
 		0x01, // 3: Type
@@ -74,6 +86,7 @@ func TypeTx16(addr uint16) []byte {
 	return b
 }
 
+// TypeTx64 returns the payload for transmitting to a 64-bit address.
 func TypeTx64(addr uint64) []byte {
 	b := []byte{
 		0x00, //  3: Type
@@ -94,39 +107,47 @@ func TypeTx64(addr uint64) []byte {
 	return b
 }
 
+// Address16 returns the 16-bit source address.
 func (f Frame) Address16() uint16 {
 	return Uint16(f[FrameOffsetAddress:])
 }
 
+// Address16 returns the 64-bit source address.
 func (f Frame) Address64() uint64 {
 	return Uint64(f[FrameOffsetAddress:])
 }
 
+// Checksum returns the calculated checksum.
 func (f Frame) Checksum() byte {
 	return 0xFF - f.Sum()
 }
 
+// Data returns the remainder of the frame, minus the checksum.
 func (f Frame) Data() []byte {
-	// Do not include the checksum.
 	return f[FrameOffsetData : len(f)-1]
 }
 
+// Id returns the confirmation ID.
 func (f Frame) Id() byte {
 	return f[FrameOffsetId]
 }
 
+// Length returns the length.
 func (f Frame) Length() int {
 	return int(Uint16(f[FrameOffsetLength:]))
 }
 
+// RSSI returns the signal strength.
 func (f Frame) RSSI() int {
 	return int(f[FrameOffsetRSSI])
 }
 
+// Start returns the start byte.
 func (f Frame) Start() byte {
 	return f[FrameOffsetStart]
 }
 
+// Status returns the type specific status byte.
 func (f Frame) Status() byte {
 	switch f.Type() {
 	case FrameTypeAtStatus:
@@ -139,10 +160,10 @@ func (f Frame) Status() byte {
 	return 0xFF
 }
 
+// Sum returns the sum of all bytes, minus the start and length.
 func (f Frame) Sum() byte {
 	var sum byte
 
-	// The start and length bytes are not included.
 	for _, c := range f[FrameOffsetType:] {
 		sum += c
 	}
@@ -150,14 +171,18 @@ func (f Frame) Sum() byte {
 	return sum
 }
 
+// Type returns the type.
 func (f Frame) Type() byte {
 	return f[FrameOffsetType]
 }
 
+// Valid returns whether or not the frame is valid, that is, the sum of all
+// bytes matches the expected value.
 func (f Frame) Valid() bool {
 	return 0xFF == f.Sum()
 }
 
+// Decode reads a complete frame from an io.Reader.
 func Decode(r io.Reader) (Frame, error) {
 	f := make(Frame, 4)
 
@@ -196,6 +221,7 @@ func Decode(r io.Reader) (Frame, error) {
 	return f, nil
 }
 
+// Encode writes a complete frame to an io.Writer.
 func Encode(w io.Writer, f Frame) error {
 	// Write the unescaped start byte.
 	if _, err := w.Write(f[0:1]); err != nil {

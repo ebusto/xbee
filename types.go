@@ -1,16 +1,5 @@
 package xbee
 
-import (
-	"encoding/binary"
-)
-
-var (
-	PutUint16 = binary.BigEndian.PutUint16
-	PutUint64 = binary.BigEndian.PutUint64
-	Uint16    = binary.BigEndian.Uint16
-	Uint64    = binary.BigEndian.Uint64
-)
-
 const (
 	FrameTypeAtCommand   = 0x08
 	FrameTypeAtStatus    = 0x88
