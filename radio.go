@@ -27,49 +27,45 @@ func NewRadio(rw io.ReadWriter) *Radio {
 	return r
 }
 
-// Address gets or sets the radio's 16 bit address.
-func (r *Radio) Address(addr uint16) {
-	f, err := r.tx(NewFrame(TypeAddress16(addr)))
-
-	if err != nil {
-		panic(err)
-	}
-
-	if f.Status() != 0x00 {
-		panic("non-zero status")
-	}
+// Address sets the radio's 16 bit address.
+func (r *Radio) Address(addr uint16) error {
+	return r.tx(TypeAddress16(addr))
 }
 
 // TX sends the payload to the destination address.
-func (r *Radio) TX(addr uint16, b []byte) error {
-	f, err := r.tx(NewFrame(TypeTx16(addr), b))
+func (r *Radio) TX(addr uint16, p []byte) error {
+	return r.tx(TypeTx16(addr), p)
+}
 
-	if err != nil {
+// tx encapsulates the payload in a complete frame, writes it to the radio,
+// and waits for confirmation.
+func (r *Radio) tx(p ...[]byte) error {
+	f := NewFrame(p...)
+
+	r.Lock()
+
+	// Send the frame to the radio.
+	if err := Encode(r.rw, f); err != nil {
+		r.Unlock()
+
 		return err
 	}
+
+	// Listen for confirmation.
+	ch := make(chan Frame)
+
+	r.cf[f.Id()] = ch
+
+	r.Unlock()
+
+	// Receive the response frame.
+	f = <-ch
 
 	if f.Status() != 0x00 {
 		return fmt.Errorf("tx: status: %x", f.Status())
 	}
 
 	return nil
-}
-
-func (r *Radio) tx(f Frame) (Frame, error) {
-	r.Lock()
-
-	if err := Encode(r.rw, f); err != nil {
-		r.Unlock()
-
-		return nil, err
-	}
-
-	c := make(chan Frame)
-
-	r.cf[f.Id()] = c
-	r.Unlock()
-
-	return <-c, nil
 }
 
 func (r *Radio) RX(addr uint16) chan Frame {
