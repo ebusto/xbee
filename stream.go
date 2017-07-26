@@ -11,59 +11,74 @@ const (
 
 type Stream struct {
 	addr uint16
-	rb   *bytes.Buffer
+	bf   *bytes.Buffer
+	err  error
 	rd   *Radio
 
 	sync.Mutex
 }
 
 func NewStream(rd *Radio, addr uint16) *Stream {
-	rb := new(bytes.Buffer)
-
-	s := &Stream{addr: addr, rb: rb, rd: rd}
+	s := &Stream{
+		addr: addr,
+		bf:   new(bytes.Buffer),
+		rd:   rd,
+	}
 
 	go s.read()
 
 	return s
 }
 
+func (s *Stream) Error() error {
+	return s.err
+}
+
+func (s *Stream) Read(p []byte) (int, error) {
+	s.Lock()
+
+	n, err := s.bf.Read(p)
+
+	s.Unlock()
+
+	return n, err
+}
+
 func (s *Stream) read() {
-	for f := range s.rd.Recv(s.addr) {
+	ch := s.rd.RX(s.addr)
+
+	for f := range ch {
 		s.Lock()
 
-		// TODO: Check errors.
-		s.rb.Write(f.Data())
+		_, s.err = s.bf.Write(f.Data())
 
 		s.Unlock()
 	}
 }
 
-func (s *Stream) Read(p []byte) (int, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.rb.Read(p)
-}
-
 func (s *Stream) Write(p []byte) (int, error) {
-	d := [][]byte{}
 	n := 0
 
+	write := func(b []byte) error {
+		err := s.rd.TX(s.addr, b)
+
+		if err == nil {
+			n += len(b)
+		}
+
+		return err
+	}
+
 	for i := maxLen; len(p) > maxLen; i += maxLen {
-		d = append(d, p[:maxLen])
+		if err := write(p[:maxLen]); err != nil {
+			return n, err
+		}
+
 		p = p[maxLen:]
 	}
 
 	if len(p) > 0 {
-		d = append(d, p)
-	}
-
-	for _, b := range d {
-		if err := s.rd.Send(s.addr, b); err != nil {
-			return n, err
-		}
-
-		n += len(b)
+		return n, write(p)
 	}
 
 	return n, nil

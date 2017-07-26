@@ -1,5 +1,10 @@
 package xbee
 
+import (
+	"fmt"
+	"io"
+)
+
 const (
 	FrameOffsetAddress  = 4
 	FrameOffsetAtStatus = 8
@@ -36,6 +41,16 @@ func NewFrame(bs ...[]byte) Frame {
 	PutUint16(l, uint16(len(p)))
 
 	return append(f, f.Checksum())
+}
+
+func TypeAddress16(addr uint16) []byte {
+	b := TypeAtCommand()
+	b = append(b, []byte("MY")...)
+	b = append(b, 0x00, 0x00)
+
+	PutUint16(b[4:], addr)
+
+	return b
 }
 
 func TypeAtCommand() []byte {
@@ -141,4 +156,56 @@ func (f Frame) Type() byte {
 
 func (f Frame) Valid() bool {
 	return 0xFF == f.Sum()
+}
+
+func Decode(r io.Reader) (Frame, error) {
+	f := make(Frame, 4)
+
+	// Read the unescaped start byte.
+	if _, err := r.Read(f[0:1]); err != nil {
+		return nil, err
+	}
+
+	// Is it the correct start byte?
+	if f.Start() != 0x7E {
+		return nil, fmt.Errorf("invalid start byte: %x", f.Start())
+	}
+
+	r = &EscapedReader{r}
+
+	// Read the length and type.
+	if _, err := r.Read(f[1:]); err != nil {
+		return nil, err
+	}
+
+	// Read the payload.
+	p := make([]byte, f.Length())
+
+	if _, err := r.Read(p); err != nil {
+		return nil, err
+	}
+
+	// Append the payload to the frame.
+	f = append(f, p...)
+
+	// Is the checksum correct?
+	if !f.Valid() {
+		return nil, fmt.Errorf("invalid sum: %x", f.Sum())
+	}
+
+	return f, nil
+}
+
+func Encode(w io.Writer, f Frame) error {
+	// Write the unescaped start byte.
+	if _, err := w.Write(f[0:1]); err != nil {
+		return err
+	}
+
+	// Write the escaped remainder.
+	w = &EscapedWriter{w}
+
+	_, err := w.Write(f[1:])
+
+	return err
 }

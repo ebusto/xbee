@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+func TestFrameAddress16(t *testing.T) {
+	f := NewFrame(TypeAddress16(0x1122))
+
+	t.Log(hex.EncodeToString(f))
+}
+
 func TestFrameAtCommand(t *testing.T) {
 	f := NewFrame(TypeAtCommand(), []byte("MY"))
 
