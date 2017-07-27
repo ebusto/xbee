@@ -37,18 +37,19 @@ func NewStreamWriter(rd *Radio, addr uint16) *StreamWriter {
 }
 
 const (
-	maxLen = 100
+	maxLen = 100 // Max payload. Xbee datasheet, page 62.
 )
 
 func (w *StreamWriter) Write(p []byte) (int, error) {
+	l := maxLen
 	n := 0
 
-	for i := maxLen; len(p) > maxLen; i += maxLen {
-		if err := w.write(p[:maxLen], &n); err != nil {
+	for i := l; len(p) > l; i += l {
+		if err := w.write(p[:l], &n); err != nil {
 			return n, err
 		}
 
-		p = p[maxLen:]
+		p = p[l:]
 	}
 
 	return n, w.write(p, &n)
