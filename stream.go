@@ -24,7 +24,7 @@ func (r *StreamReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 
-	return r.Read(p)
+	return r.b.Read(p)
 }
 
 type StreamWriter struct {
@@ -37,7 +37,7 @@ func NewStreamWriter(rd *Radio, addr uint16) *StreamWriter {
 }
 
 const (
-	maxLen = 20
+	maxLen = 100
 )
 
 func (w *StreamWriter) Write(p []byte) (int, error) {
