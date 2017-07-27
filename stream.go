@@ -2,84 +2,68 @@ package xbee
 
 import (
 	"bytes"
-	"sync"
 )
+
+type StreamReader struct {
+	b bytes.Buffer
+	c chan Frame
+}
+
+func NewStreamReader(rd *Radio, addr uint16) *StreamReader {
+	return &StreamReader{bytes.Buffer{}, rd.RX(addr)}
+}
+
+func (r *StreamReader) Read(p []byte) (int, error) {
+	if r.b.Len() > 0 {
+		return r.b.Read(p)
+	}
+
+	f := <-r.c
+
+	if _, err := r.b.Write(f.Data()); err != nil {
+		return 0, err
+	}
+
+	return r.Read(p)
+}
+
+type StreamWriter struct {
+	addr uint16
+	rd   *Radio
+}
+
+func NewStreamWriter(rd *Radio, addr uint16) *StreamWriter {
+	return &StreamWriter{addr, rd}
+}
 
 const (
-	maxLen = 80
+	maxLen = 20
 )
 
-type Stream struct {
-	addr uint16
-	bf   *bytes.Buffer
-	err  error
-	rd   *Radio
-
-	sync.Mutex
-}
-
-func NewStream(rd *Radio, addr uint16) *Stream {
-	s := &Stream{
-		addr: addr,
-		bf:   new(bytes.Buffer),
-		rd:   rd,
-	}
-
-	go s.read()
-
-	return s
-}
-
-func (s *Stream) Error() error {
-	return s.err
-}
-
-func (s *Stream) Read(p []byte) (int, error) {
-	s.Lock()
-
-	n, err := s.bf.Read(p)
-
-	s.Unlock()
-
-	return n, err
-}
-
-func (s *Stream) read() {
-	ch := s.rd.RX(s.addr)
-
-	for f := range ch {
-		s.Lock()
-
-		_, s.err = s.bf.Write(f.Data())
-
-		s.Unlock()
-	}
-}
-
-func (s *Stream) Write(p []byte) (int, error) {
+func (w *StreamWriter) Write(p []byte) (int, error) {
 	n := 0
 
-	write := func(b []byte) error {
-		err := s.rd.TX(s.addr, b)
-
-		if err == nil {
-			n += len(b)
-		}
-
-		return err
-	}
-
 	for i := maxLen; len(p) > maxLen; i += maxLen {
-		if err := write(p[:maxLen]); err != nil {
+		if err := w.write(p[:maxLen], &n); err != nil {
 			return n, err
 		}
 
 		p = p[maxLen:]
 	}
 
-	if len(p) > 0 {
-		return n, write(p)
+	return n, w.write(p, &n)
+}
+
+func (w *StreamWriter) write(p []byte, n *int) error {
+	if len(p) == 0 {
+		return nil
 	}
 
-	return n, nil
+	err := w.rd.TX(w.addr, p)
+
+	if err == nil {
+		*n += len(p)
+	}
+
+	return err
 }

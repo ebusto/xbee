@@ -2,13 +2,14 @@ package xbee
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 )
 
 const (
 	FrameOffsetAddress  = 4
-	FrameOffsetAtStatus = 8
+	FrameOffsetAtStatus = 7
 	FrameOffsetData     = 8
 	FrameOffsetId       = 4
 	FrameOffsetLength   = 1
@@ -147,17 +148,37 @@ func (f Frame) Start() byte {
 	return f[FrameOffsetStart]
 }
 
-// Status returns the type specific status byte.
-func (f Frame) Status() byte {
+// Status returns the type specific status.
+func (f Frame) Status() error {
 	switch f.Type() {
+	// XBee datasheet, page 60.
 	case FrameTypeAtStatus:
-		return f[FrameOffsetAtStatus]
+		switch f[FrameOffsetAtStatus] {
+		case 0x00:
+			return nil
+		case 0x01:
+			return errors.New("unknown")
+		case 0x02:
+			return errors.New("invalid command")
+		case 0x03:
+			return errors.New("invalid parameter")
+		}
 
+	// Xbee datasheet, page 63.
 	case FrameTypeTxStatus:
-		return f[FrameOffsetTxStatus]
+		switch f[FrameOffsetTxStatus] {
+		case 0x00:
+			return nil
+		case 0x01:
+			return errors.New("no ack received")
+		case 0x02:
+			return errors.New("cca failure")
+		case 0x03:
+			return errors.New("purged")
+		}
 	}
 
-	return 0xFF
+	return nil
 }
 
 // Sum returns the sum of all bytes, minus the start and length.

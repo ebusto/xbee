@@ -1,10 +1,10 @@
 package xbee
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"sync"
+	"time"
 )
 
 type Radio struct {
@@ -61,8 +61,10 @@ func (r *Radio) tx(p ...[]byte) error {
 	// Receive the response frame.
 	f = <-ch
 
-	if f.Status() != 0x00 {
-		return fmt.Errorf("tx: status: %x", f.Status())
+	if err := f.Status(); err != nil {
+		time.Sleep(time.Millisecond * 250)
+
+		return err
 	}
 
 	return nil
@@ -83,12 +85,13 @@ func (r *Radio) rx() {
 		f, err := Decode(r.rw)
 
 		if err != nil {
-			log.Println(err)
+			log.Printf("rx: decode: %s", err)
+			continue
 		}
 
 		r.Lock()
 
-		// Dispatch the frame.
+		// Dispatch the frame. Unhandled frame types are silently discarded.
 		switch f.Type() {
 		case FrameTypeAtStatus, FrameTypeTxStatus:
 			if c, ok := r.cf[f.Id()]; ok {
@@ -96,19 +99,10 @@ func (r *Radio) rx() {
 				delete(r.cf, f.Id())
 			}
 
-		case FrameTypeModemStatus:
-			log.Printf("Modem: % X", f)
-
 		case FrameTypeRx16:
 			if c, ok := r.in[f.Address16()]; ok {
 				c <- f
 			}
-
-		case FrameTypeRx64:
-			log.Printf("Rx64: % X", f)
-
-		default:
-			log.Printf("Unexpected frame: %X", f)
 		}
 
 		r.Unlock()
