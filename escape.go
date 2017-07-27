@@ -8,10 +8,6 @@ type EscapedReader struct {
 	R io.Reader
 }
 
-type EscapedWriter struct {
-	W io.Writer
-}
-
 func (r *EscapedReader) Read(b []byte) (int, error) {
 	e := false // Next byte escaped?
 	n := 0     // Total bytes read.
@@ -40,6 +36,10 @@ func (r *EscapedReader) Read(b []byte) (int, error) {
 	}
 
 	return n, nil
+}
+
+type EscapedWriter struct {
+	W io.Writer
 }
 
 func (w *EscapedWriter) Write(b []byte) (int, error) {
