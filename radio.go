@@ -1,6 +1,7 @@
 package xbee
 
 import (
+	"errors"
 	"io"
 	"log"
 	"sync"
@@ -10,6 +11,7 @@ import (
 type Radio struct {
 	cf map[byte]chan Frame
 	in map[uint16]chan Frame
+	lw time.Time
 	rw io.ReadWriter
 
 	sync.Mutex
@@ -19,6 +21,7 @@ func NewRadio(rw io.ReadWriter) *Radio {
 	r := &Radio{
 		cf: make(map[byte]chan Frame),
 		in: make(map[uint16]chan Frame),
+		lw: time.Now(),
 		rw: rw,
 	}
 
@@ -27,28 +30,46 @@ func NewRadio(rw io.ReadWriter) *Radio {
 	return r
 }
 
+const (
+	alarmDelay = time.Second * 2
+	writeDelay = time.Millisecond * 10
+)
+
 // Address sets the radio's 16 bit address.
 func (r *Radio) Address(addr uint16) error {
-	return r.tx(TypeAddress16(addr))
+	return r.txStatus(TypeAddress16(addr))
 }
 
 // TX sends the payload to the destination address.
 func (r *Radio) TX(addr uint16, p []byte) error {
-	return r.tx(TypeTx16(addr), p)
+	return r.txStatus(TypeTx16(addr), p)
+}
+
+// txStatus sends the payload and returns the status, ignoring any response.
+func (r *Radio) txStatus(p ...[]byte) error {
+	_, err := r.tx(p...)
+
+	return err
 }
 
 // tx encapsulates the payload in a complete frame, writes it to the radio,
 // and waits for confirmation.
-func (r *Radio) tx(p ...[]byte) error {
-	f := NewFrame(p...)
-
+func (r *Radio) tx(p ...[]byte) (Frame, error) {
 	r.Lock()
+
+	if el := time.Since(r.lw); el < writeDelay {
+		time.Sleep(writeDelay - el)
+	}
+
+	r.lw = time.Now()
+
+	f := NewFrame(p...)
 
 	// Send the frame to the radio.
 	if err := Encode(r.rw, f); err != nil {
 		r.Unlock()
 
-		return err
+		return nil, err
 	}
 
 	// Listen for confirmation.
@@ -58,20 +79,22 @@ func (r *Radio) tx(p ...[]byte) error {
 
 	r.Unlock()
 
+	alarm := time.NewTimer(alarmDelay)
+
 	// Receive the response frame.
-	f = <-ch
+	select {
+	case f = <-ch:
+		alarm.Stop()
 
-	if err := f.Status(); err != nil {
-		time.Sleep(time.Millisecond * 250)
-
-		return err
+	case <-alarm.C:
+		return nil, errors.New("alarm")
 	}
 
-	return nil
+	return f, f.Status()
 }
 
 func (r *Radio) RX(addr uint16) chan Frame {
-	ch := make(chan Frame)
+	ch := make(chan Frame, 256)
 
 	r.Lock()
 	r.in[addr] = ch
@@ -85,7 +108,7 @@ func (r *Radio) rx() {
 		f, err := Decode(r.rw)
 
 		if err != nil {
-			log.Printf("rx: decode: %s", err)
+			log.Println(err)
 			continue
 		}
 
@@ -94,15 +117,19 @@ func (r *Radio) rx() {
 		// Dispatch the frame. Unhandled frame types are silently discarded.
 		switch f.Type() {
 		case FrameTypeAtStatus, FrameTypeTxStatus:
-			if c, ok := r.cf[f.Id()]; ok {
-				c <- f
-				delete(r.cf, f.Id())
+			if ch, ok := r.cf[f.Id()]; ok {
+				ch <- f
 			}
 
+			delete(r.cf, f.Id())
+
 		case FrameTypeRx16:
-			if c, ok := r.in[f.Address16()]; ok {
-				c <- f
+			if ch, ok := r.in[f.Address16()]; ok {
+				ch <- f
 			}
+
+		default:
+			log.Printf("rx: unhandled: %x", f)
 		}
 
 		r.Unlock()

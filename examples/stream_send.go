@@ -40,10 +40,10 @@ func main() {
 		p := Packet{time.Now(), "hello!"}
 		e := json.NewEncoder(s)
 
+		log.Println(p)
+
 		if err := e.Encode(&p); err != nil {
 			log.Println(err)
 		}
-
-		time.Sleep(time.Millisecond * 250)
 	}
 }

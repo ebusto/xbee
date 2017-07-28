@@ -207,14 +207,16 @@ func (f Frame) Valid() bool {
 func Decode(r io.Reader) (Frame, error) {
 	f := make(Frame, 4)
 
-	// Read the unescaped start byte.
-	if _, err := r.Read(f[0:1]); err != nil {
-		return nil, err
-	}
+	for {
+		// Read the unescaped start byte.
+		if _, err := r.Read(f[:1]); err != nil {
+			return nil, err
+		}
 
-	// Is it the correct start byte?
-	if f.Start() != 0x7E {
-		return nil, fmt.Errorf("invalid start byte: %x", f.Start())
+		// Is it the correct start byte?
+		if f.Start() == 0x7E {
+			break
+		}
 	}
 
 	r = &EscapedReader{r}

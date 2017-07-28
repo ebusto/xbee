@@ -33,7 +33,7 @@ func main() {
 	s := xbee.NewStreamReader(r, AddrRemote)
 
 	if err := r.Address(AddrLocal); err != nil {
-		log.Fatalf("Unable to set local address: %s", err)
+		log.Printf("Unable to set local address: %s", err)
 	}
 
 	for {
