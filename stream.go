@@ -27,6 +27,14 @@ func (r *StreamReader) Read(p []byte) (int, error) {
 	return r.b.Read(p)
 }
 
+func (r *StreamReader) ReadByte() (byte, error) {
+	var c [1]byte
+
+	_, err := r.Read(c[:])
+
+	return c[0], err
+}
+
 type StreamWriter struct {
 	addr uint16
 	rd   *Radio
@@ -55,6 +63,12 @@ func (w *StreamWriter) Write(p []byte) (int, error) {
 	return n, w.write(p, &n)
 }
 
+func (w *StreamWriter) WriteByte(c byte) error {
+	p := []byte{c}
+
+	return w.write(p, nil)
+}
+
 func (w *StreamWriter) write(p []byte, n *int) error {
 	if len(p) == 0 {
 		return nil
@@ -62,7 +76,7 @@ func (w *StreamWriter) write(p []byte, n *int) error {
 
 	err := w.rd.TX(w.addr, p)
 
-	if err == nil {
+	if err == nil && n != nil {
 		*n += len(p)
 	}
 

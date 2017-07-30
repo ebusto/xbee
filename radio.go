@@ -114,7 +114,7 @@ func (r *Radio) rx() {
 
 		r.Lock()
 
-		// Dispatch the frame. Unhandled frame types are silently discarded.
+		// Dispatch the frame. Unhandled frames are silently discarded.
 		switch f.Type() {
 		case FrameTypeAtStatus, FrameTypeTxStatus:
 			if ch, ok := r.cf[f.Id()]; ok {
@@ -127,9 +127,6 @@ func (r *Radio) rx() {
 			if ch, ok := r.in[f.Address16()]; ok {
 				ch <- f
 			}
-
-		default:
-			log.Printf("rx: unhandled: %x", f)
 		}
 
 		r.Unlock()
