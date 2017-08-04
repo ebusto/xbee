@@ -56,6 +56,7 @@ func NewFrame(bs ...[]byte) Frame {
 // TypeAddress16 returns the payload for a 16-bit address assignment.
 func TypeAddress16(addr uint16) []byte {
 	b := TypeAtCommand()
+
 	b = append(b, []byte("MY")...)
 	b = append(b, 0x00, 0x00)
 
@@ -70,6 +71,25 @@ func TypeAtCommand() []byte {
 		0x08, // 3: Type
 		0x00, // 4: ID
 	}
+}
+
+// TypeDiscovery returns the payload for a node discovery request.
+func TypeDiscover() []byte {
+	b := TypeAtCommand()
+
+	b = append(b, []byte("ND")...)
+
+	return b
+}
+
+// TypeIdentifier returns the payload for a node identifier assignment.
+func TypeIdentifier(id string) []byte {
+	b := TypeAtCommand()
+
+	b = append(b, []byte("NI")...)
+	b = append(b, []byte(id)...)
+
+	return b
 }
 
 // TypeTx16 returns the payload for transmitting to a 16-bit address.

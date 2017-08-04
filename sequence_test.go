@@ -22,7 +22,7 @@ func TestSequence(t *testing.T) {
 		}
 
 		if i > 0 && v != e {
-			t.Fatal("Next value not last + 1: %d", e)
+			t.Fatalf("Next value not last + 1: %d", e)
 		}
 
 		l = v

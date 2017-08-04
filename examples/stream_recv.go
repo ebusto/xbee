@@ -30,7 +30,7 @@ func main() {
 	}
 
 	r := xbee.NewRadio(cn)
-	s := xbee.NewStreamReader(r, AddrRemote)
+	s := xbee.NewStream(r, AddrRemote)
 
 	if err := r.Address(AddrLocal); err != nil {
 		log.Printf("Unable to set local address: %s", err)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"time"
 
 	"github.com/ebusto/xbee"
 	"github.com/tarm/serial"
@@ -17,7 +18,7 @@ var players = map[string]uint16{
 
 func main() {
 	if len(os.Args) < 3 {
-		log.Fatal("Usage: %s <radio> A|B")
+		log.Fatalf("Usage: %s <radio> A|B", os.Args[0])
 	}
 
 	cn, err := serial.OpenPort(
@@ -38,12 +39,10 @@ func main() {
 		}
 	}
 
-	rd := xbee.NewRadio(cn)
+	r := xbee.NewRadio(cn)
+	s := xbee.NewStream(r, addrRemote)
 
-	r := xbee.NewStreamReader(rd, addrRemote)
-	w := xbee.NewStreamWriter(rd, addrRemote)
-
-	if err := rd.Address(addrLocal); err != nil {
+	if err := r.Address(addrLocal); err != nil {
 		log.Fatalf("Unable to set local address: %s", err)
 	}
 
@@ -56,12 +55,12 @@ func main() {
 	v := rand.Int63n(int64(addrLocal))
 	n := binary.PutVarint(buf, v)
 
-	if _, err := w.Write(buf[:n]); err != nil {
+	if _, err := s.Write(buf[:n]); err != nil {
 		log.Fatal(err)
 	}
 
 	for {
-		v, err := binary.ReadVarint(r)
+		v, err := binary.ReadVarint(s)
 
 		if err != nil {
 			log.Fatal(err)
@@ -72,7 +71,7 @@ func main() {
 		n := binary.PutVarint(buf, v+1)
 
 		for {
-			if _, err := w.Write(buf[:n]); err != nil {
+			if _, err := s.Write(buf[:n]); err != nil {
 				log.Println(err)
 				continue
 			}
