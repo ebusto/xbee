@@ -8,15 +8,16 @@ import (
 )
 
 const (
-	FrameOffsetAddress  = 4
-	FrameOffsetAtStatus = 7
-	FrameOffsetData     = 8
-	FrameOffsetId       = 4
-	FrameOffsetLength   = 1
-	FrameOffsetRSSI     = 6
-	FrameOffsetStart    = 0
-	FrameOffsetTxStatus = 5
-	FrameOffsetType     = 3
+	FrameOffsetAddress   = 4
+	FrameOffsetAtCommand = 5
+	FrameOffsetAtStatus  = 7
+	FrameOffsetData      = 8
+	FrameOffsetId        = 4
+	FrameOffsetLength    = 1
+	FrameOffsetRSSI      = 6
+	FrameOffsetStart     = 0
+	FrameOffsetTxStatus  = 5
+	FrameOffsetType      = 3
 )
 
 var (
@@ -126,6 +127,14 @@ func TypeTx64(addr uint64) []byte {
 	PutUint64(b[2:], addr)
 
 	return b
+}
+
+// AtCommand returns the AT command.
+func (f Frame) AtCommand() []byte {
+	l := FrameOffsetAtCommand
+	h := FrameOffsetAtCommand + 2
+
+	return f[l:h]
 }
 
 // Address16 returns the 16-bit source address.

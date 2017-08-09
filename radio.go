@@ -8,20 +8,28 @@ import (
 	"time"
 )
 
+type Node struct {
+	Addr uint16
+	Name string
+	RSSI byte
+}
+
 type Radio struct {
-	cf map[byte]chan Frame
+	cf map[byte]FrameFn
 	in map[uint16]chan Frame
-	lw time.Time
 	rw io.ReadWriter
 
 	sync.Mutex
 }
 
+type (
+	FrameFn func(Frame) bool
+)
+
 func NewRadio(rw io.ReadWriter) *Radio {
 	r := &Radio{
-		cf: make(map[byte]chan Frame),
+		cf: make(map[byte]FrameFn),
 		in: make(map[uint16]chan Frame),
-		lw: time.Now(),
 		rw: rw,
 	}
 
@@ -31,76 +39,99 @@ func NewRadio(rw io.ReadWriter) *Radio {
 }
 
 const (
-	alarmDelay = time.Second * 2
-	writeDelay = time.Millisecond * 10
+	alarmDelay = time.Second * 5
 )
 
 // Address sets the radio's 16 bit address.
 func (r *Radio) Address(addr uint16) error {
-	return r.txStatus(TypeAddress16(addr))
+	return r.tx(nil, TypeAddress16(addr))
+}
+
+// Discover returns other nodes in the same PAN.
+func (r *Radio) Discover() ([]Node, error) {
+	var nodes []Node
+
+	fn := func(f Frame) bool {
+		b := f.Data()
+
+		if len(b) == 0 {
+			return true
+		}
+
+		na := b[0:2]           // 16-bit address.
+		nn := b[11 : len(b)-1] // Identifier, ignore NULL.
+		ns := b[10]            // RSSI.
+
+		n := Node{Addr: Uint16(na), Name: string(nn), RSSI: ns}
+
+		nodes = append(nodes, n)
+
+		return false
+	}
+
+	return nodes, r.tx(fn, TypeDiscover())
+}
+
+// Identifier sets the radio's identifier.
+func (r *Radio) Identifier(id string) error {
+	return r.tx(nil, TypeIdentifier(id))
 }
 
 // TX sends the payload to the destination address.
 func (r *Radio) TX(addr uint16, p []byte) error {
-	return r.txStatus(TypeTx16(addr), p)
+	return r.tx(nil, TypeTx16(addr), p)
 }
 
 // txStatus sends the payload and returns the status, ignoring any response.
-func (r *Radio) txStatus(p ...[]byte) error {
-	_, err := r.tx(p...)
+func (r *Radio) tx(fn FrameFn, p ...[]byte) error {
+	f := NewFrame(p...)
+
+	r.Lock()
+
+	// Send the frame to the radio.
+	if err := Encode(r.rw, f); err != nil {
+		return err
+	}
+
+	alarm := time.NewTimer(alarmDelay)
+	frame := make(chan Frame)
+
+	r.cf[f.Id()] = func(f Frame) bool {
+		done := true
+
+		if fn != nil {
+			done = fn(f)
+		}
+
+		if done {
+			alarm.Stop()
+			frame <- f
+		}
+
+		return done
+	}
+
+	r.Unlock()
+
+	var err error
+
+	select {
+	case <-alarm.C:
+		err = errors.New("alarm")
+	case f = <-frame:
+		err = f.Status()
+	}
 
 	return err
 }
 
-// tx encapsulates the payload in a complete frame, writes it to the radio,
-// and waits for confirmation.
-func (r *Radio) tx(p ...[]byte) (Frame, error) {
-	r.Lock()
-
-	if el := time.Since(r.lw); el < writeDelay {
-		time.Sleep(writeDelay - el)
-	}
-
-	r.lw = time.Now()
-
-	f := NewFrame(p...)
-
-	// Send the frame to the radio.
-	if err := Encode(r.rw, f); err != nil {
-		r.Unlock()
-
-		return nil, err
-	}
-
-	// Listen for confirmation.
-	ch := make(chan Frame)
-
-	r.cf[f.Id()] = ch
-
-	r.Unlock()
-
-	alarm := time.NewTimer(alarmDelay)
-
-	// Receive the response frame.
-	select {
-	case f = <-ch:
-		alarm.Stop()
-
-	case <-alarm.C:
-		return nil, errors.New("alarm")
-	}
-
-	return f, f.Status()
-}
-
 func (r *Radio) RX(addr uint16) chan Frame {
-	ch := make(chan Frame, 256)
-
 	r.Lock()
-	r.in[addr] = ch
-	r.Unlock()
+	defer r.Unlock()
 
-	return ch
+	r.in[addr] = make(chan Frame)
+
+	return r.in[addr]
 }
 
 func (r *Radio) rx() {
@@ -117,11 +148,15 @@ func (r *Radio) rx() {
 		// Dispatch the frame. Unhandled frames are silently discarded.
 		switch f.Type() {
 		case FrameTypeAtStatus, FrameTypeTxStatus:
-			if ch, ok := r.cf[f.Id()]; ok {
-				ch <- f
+			fn, ok := r.cf[f.Id()]
+
+			if !ok {
+				continue
 			}
 
-			delete(r.cf, f.Id())
+			if done := fn(f); done {
+				delete(r.cf, f.Id())
+			}
 
 		case FrameTypeRx16:
 			if ch, ok := r.in[f.Address16()]; ok {

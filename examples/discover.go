@@ -29,9 +29,13 @@ func main() {
 
 	r := xbee.NewRadio(cn)
 
+	log.Printf("Setting address to: %X", addr)
+
 	if err := r.Address(addr); err != nil {
 		log.Fatalf("Unable to set local address: %s", err)
 	}
+
+	log.Printf("Setting identifier to: %s", os.Args[2])
 
 	if err := r.Identifier(os.Args[2]); err != nil {
 		log.Fatalf("Unable to set identifier: %s", err)
@@ -40,8 +44,12 @@ func main() {
 	for {
 		time.Sleep(time.Second)
 
-		if err := r.Discover(); err != nil {
+		nodes, err := r.Discover()
+
+		if err != nil {
 			log.Fatalf("Unable to discover nodes: %s", err)
 		}
+
+		log.Printf("%#v", nodes)
 	}
 }

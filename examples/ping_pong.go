@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"time"
 
 	"github.com/ebusto/xbee"
 	"github.com/tarm/serial"
