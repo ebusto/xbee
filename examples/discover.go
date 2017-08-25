@@ -47,9 +47,12 @@ func main() {
 		nodes, err := r.Discover()
 
 		if err != nil {
-			log.Fatalf("Unable to discover nodes: %s", err)
+			log.Printf("Unable to discover nodes: %s", err)
+			continue
 		}
 
-		log.Printf("%#v", nodes)
+		for _, node := range nodes {
+			log.Printf("[%d: %d] %s", node.Serial, node.Address, node.Ident)
+		}
 	}
 }

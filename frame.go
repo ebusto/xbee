@@ -21,15 +21,19 @@ const (
 )
 
 var (
-	PutUint16 = binary.BigEndian.PutUint16
-	PutUint64 = binary.BigEndian.PutUint64
-	Uint16    = binary.BigEndian.Uint16
-	Uint64    = binary.BigEndian.Uint64
+	order = binary.BigEndian
 )
 
 var seq = NewSequence()
 
 type Frame []byte
+
+type Node struct {
+	Address uint16
+	Ident   string
+	RSSI    byte
+	Serial  uint64
+}
 
 // NewFrame returns a new frame with the specified payload.
 func NewFrame(bs ...[]byte) Frame {
@@ -49,7 +53,7 @@ func NewFrame(bs ...[]byte) Frame {
 	l := f[1:] // Length
 	p := f[3:] // Payload
 
-	PutUint16(l, uint16(len(p)))
+	order.PutUint16(l, uint16(len(p)))
 
 	return append(f, f.Checksum())
 }
@@ -61,7 +65,7 @@ func TypeAddress16(addr uint16) []byte {
 	b = append(b, []byte("MY")...)
 	b = append(b, 0x00, 0x00)
 
-	PutUint16(b[4:], addr)
+	order.PutUint16(b[4:], addr)
 
 	return b
 }
@@ -103,7 +107,7 @@ func TypeTx16(addr uint16) []byte {
 		0x00, // 7: Options
 	}
 
-	PutUint16(b[2:], addr)
+	order.PutUint16(b[2:], addr)
 
 	return b
 }
@@ -124,7 +128,7 @@ func TypeTx64(addr uint64) []byte {
 		0x00, // 13: Options
 	}
 
-	PutUint64(b[2:], addr)
+	order.PutUint64(b[2:], addr)
 
 	return b
 }
@@ -139,12 +143,12 @@ func (f Frame) AtCommand() []byte {
 
 // Address16 returns the 16-bit source address.
 func (f Frame) Address16() uint16 {
-	return Uint16(f[FrameOffsetAddress:])
+	return order.Uint16(f[FrameOffsetAddress:])
 }
 
 // Address16 returns the 64-bit source address.
 func (f Frame) Address64() uint64 {
-	return Uint64(f[FrameOffsetAddress:])
+	return order.Uint64(f[FrameOffsetAddress:])
 }
 
 // Checksum returns the calculated checksum.
@@ -164,7 +168,28 @@ func (f Frame) Id() byte {
 
 // Length returns the length.
 func (f Frame) Length() int {
-	return int(Uint16(f[FrameOffsetLength:]))
+	return int(order.Uint16(f[FrameOffsetLength:]))
+}
+
+// Node returns the node discover response.
+func (f Frame) Node() *Node {
+	b := f.Data()
+
+	if len(b) < 12 {
+		return nil
+	}
+
+	na := b[0:2]  // 2 bytes: 16-bit address.
+	ns := b[2:10] // 8 bytes: 64-bit serial.
+	nr := b[10]   // 1 byte:  RSSI.
+	ni := b[11:]  // 1 to 20 bytes: identifier.
+
+	return &Node{
+		Address: order.Uint16(na),
+		Ident:   string(ni[:len(ni)-1]),
+		RSSI:    nr,
+		Serial:  order.Uint64(ns),
+	}
 }
 
 // RSSI returns the signal strength.

@@ -8,29 +8,23 @@ import (
 	"time"
 )
 
-type Node struct {
-	Addr uint16
-	Name string
-	RSSI byte
-}
-
 type Radio struct {
 	cf map[byte]FrameFn
 	in map[uint16]chan Frame
 	rw io.ReadWriter
+	to time.Duration
 
 	sync.Mutex
 }
 
-type (
-	FrameFn func(Frame) bool
-)
+type FrameFn func(Frame) bool
 
 func NewRadio(rw io.ReadWriter) *Radio {
 	r := &Radio{
 		cf: make(map[byte]FrameFn),
 		in: make(map[uint16]chan Frame),
 		rw: rw,
+		to: time.Second * 5,
 	}
 
 	go r.rx()
@@ -38,33 +32,21 @@ func NewRadio(rw io.ReadWriter) *Radio {
 	return r
 }
 
-const (
-	alarmDelay = time.Second * 5
-)
-
 // Address sets the radio's 16 bit address.
 func (r *Radio) Address(addr uint16) error {
 	return r.tx(nil, TypeAddress16(addr))
 }
 
 // Discover returns other nodes in the same PAN.
-func (r *Radio) Discover() ([]Node, error) {
-	var nodes []Node
+func (r *Radio) Discover() ([]*Node, error) {
+	var nodes []*Node
 
 	fn := func(f Frame) bool {
-		b := f.Data()
-
-		if len(b) == 0 {
+		if len(f.Data()) == 0 {
 			return true
 		}
 
-		na := b[0:2]           // 16-bit address.
-		nn := b[11 : len(b)-1] // Identifier, ignore NULL.
-		ns := b[10]            // RSSI.
-
-		n := Node{Addr: Uint16(na), Name: string(nn), RSSI: ns}
-
-		nodes = append(nodes, n)
+		nodes = append(nodes, f.Node())
 
 		return false
 	}
@@ -85,16 +67,18 @@ func (r *Radio) TX(addr uint16, p []byte) error {
 // txStatus sends the payload and returns the status, ignoring any response.
 func (r *Radio) tx(fn FrameFn, p ...[]byte) error {
 	f := NewFrame(p...)
+	c := make(chan Frame)
 
 	r.Lock()
 
 	// Send the frame to the radio.
 	if err := Encode(r.rw, f); err != nil {
+		r.Unlock()
 		return err
 	}
 
-	alarm := time.NewTimer(alarmDelay)
-	frame := make(chan Frame)
+	// Acknowledgement timeout.
+	alarm := time.NewTimer(r.to)
 
 	r.cf[f.Id()] = func(f Frame) bool {
 		done := true
@@ -105,7 +89,7 @@ func (r *Radio) tx(fn FrameFn, p ...[]byte) error {
 
 		if done {
 			alarm.Stop()
-			frame <- f
+			c <- f
 		}
 
 		return done
@@ -118,7 +102,7 @@ func (r *Radio) tx(fn FrameFn, p ...[]byte) error {
 	select {
 	case <-alarm.C:
 		err = errors.New("alarm")
-	case f = <-frame:
+	case f = <-c:
 		err = f.Status()
 	}
 
@@ -151,7 +135,7 @@ func (r *Radio) rx() {
 			fn, ok := r.cf[f.Id()]
 
 			if !ok {
-				continue
+				break
 			}
 
 			if done := fn(f); done {
