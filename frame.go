@@ -179,9 +179,9 @@ func (f Frame) Node() *Node {
 		return nil
 	}
 
-	na := b[0:2]  // 2 bytes: 16-bit address.
-	ns := b[2:10] // 8 bytes: 64-bit serial.
-	nr := b[10]   // 1 byte:  RSSI.
+	na := b[0:2]  // 2 byte: 16-bit address.
+	ns := b[2:10] // 8 byte: 64-bit serial.
+	nr := b[10]   // 1 byte: RSSI.
 	ni := b[11:]  // 1 to 20 bytes: identifier.
 
 	return &Node{
